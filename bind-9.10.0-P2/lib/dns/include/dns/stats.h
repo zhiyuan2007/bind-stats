@@ -144,6 +144,12 @@ enum {
 };
 
 #define DNS_STATS_NCOUNTERS 8
+isc_uint64_t
+dns_stats_get_query_count(dns_stats_t *stats);
+
+isc_uint64_t
+dns_stats_get(dns_stats_t *stats, dns_rdatatype_t type);
+
 
 #if 0
 /*%<

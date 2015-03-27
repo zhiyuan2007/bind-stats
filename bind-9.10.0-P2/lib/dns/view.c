@@ -153,6 +153,7 @@ dns_view_create(isc_mem_t *mctx, dns_rdataclass_t rdclass,
 	view->rootexclude = NULL;
 	view->adbstats = NULL;
 	view->resstats = NULL;
+	view->rcodestats = NULL;
 	view->resquerystats = NULL;
 	view->cacheshared = ISC_FALSE;
 	ISC_LIST_INIT(view->dns64);
@@ -238,6 +239,12 @@ dns_view_create(isc_mem_t *mctx, dns_rdataclass_t rdclass,
 		       view, NULL, NULL, NULL);
 	view->viewlist = NULL;
 	view->magic = DNS_VIEW_MAGIC;
+
+
+    view->query_count = 0;
+    view->last_count = 0;
+    view->qps = 0.0;
+    view->success_rate = 0.0;
 
 	*viewp = view;
 
@@ -440,6 +447,8 @@ destroy(dns_view_t *view) {
 		isc_stats_detach(&view->adbstats);
 	if (view->resstats != NULL)
 		isc_stats_detach(&view->resstats);
+	if (view->rcodestats!= NULL)
+		isc_stats_detach(&view->rcodestats);
 	if (view->resquerystats != NULL)
 		dns_stats_detach(&view->resquerystats);
 	if (view->secroots_priv != NULL)
@@ -1778,6 +1787,27 @@ dns_view_initsecroots(dns_view_t *view, isc_mem_t *mctx) {
 		dns_keytable_detach(&view->secroots_priv);
 	return (dns_keytable_create(mctx, &view->secroots_priv));
 }
+
+void
+dns_view_setrcodestats(dns_view_t *view, isc_stats_t *stats) {
+
+	REQUIRE(DNS_VIEW_VALID(view));
+	REQUIRE(!view->frozen);
+	REQUIRE(view->rcodestats == NULL);
+
+	isc_stats_attach(stats, &view->rcodestats);
+}
+
+void
+dns_view_getrcodestats(dns_view_t *view, isc_stats_t **statsp) {
+	REQUIRE(DNS_VIEW_VALID(view));
+	REQUIRE(statsp != NULL && *statsp == NULL);
+
+	if (view->rcodestats != NULL)
+		isc_stats_attach(view->rcodestats, statsp);
+}
+
+
 
 isc_result_t
 dns_view_getsecroots(dns_view_t *view, dns_keytable_t **ktp) {

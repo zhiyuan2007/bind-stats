@@ -299,6 +299,13 @@ isc_stats_increment(isc_stats_t *stats, isc_statscounter_t counter) {
 	incrementcounter(stats, (int)counter);
 }
 
+isc_uint64_t 
+isc_stats_get(isc_stats_t *stats, isc_statscounter_t counter) {
+	REQUIRE(ISC_STATS_VALID(stats));
+	REQUIRE(counter < stats->ncounters);
+	return stats->counters[counter];
+}
+
 void
 isc_stats_decrement(isc_stats_t *stats, isc_statscounter_t counter) {
 	REQUIRE(ISC_STATS_VALID(stats));

@@ -131,7 +131,8 @@ typedef enum {
 typedef enum {
 	isc_statsformat_file,
 	isc_statsformat_xml,
-	isc_statsformat_json
+	isc_statsformat_json,
+	isc_statsformat_string
 } isc_statsformat_t;
 
 #endif /* ISC_TYPES_H */

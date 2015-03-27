@@ -31,10 +31,28 @@
 #include <named/types.h>
 
 #define NS_STATSCHANNEL_HTTPPORT		80
+//typedef enum { statsformat_file, statsformat_xml, statsformat_string} statsformat_t;
+typedef struct
+stats_dumparg {
+	isc_statsformat_t	type;
+	void		*arg;		/* type dependent argument */
+	int		ncounters;	/* used for general statistics */
+	int		*counterindices; /* used for general statistics */
+	isc_uint64_t	*countervalues;	 /* used for general statistics */
+	isc_result_t	result;
+} stats_dumparg_t;
+
 
 isc_result_t
 ns_statschannels_configure(ns_server_t *server, const cfg_obj_t *config,
 			   cfg_aclconfctx_t *aclconfctx);
+void
+rdtypestat_dump(dns_rdatastatstype_t type, isc_uint64_t val, void *arg);
+
+isc_result_t
+dump_counters(isc_stats_t *stats, isc_statsformat_t type, void *arg,
+	      const char *category, const char **desc, int ncounters,
+	      int *indices, isc_uint64_t *values, int options);
 /*%<
  * [Re]configure the statistics channels.
  *

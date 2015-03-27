@@ -224,6 +224,20 @@ dns_zone_setview(dns_zone_t *zone, dns_view_t *view);
  *\li	'zone' to be a valid zone.
  */
 
+isc_uint64_t
+zone_get_query_count(dns_zone_t *zone);
+
+float
+zone_get_qps(dns_zone_t *zone);
+
+void
+zone_set_query_count(dns_zone_t *zone, isc_uint64_t count);
+
+void
+zone_set_qps(dns_zone_t *zone, float qps);
+
+
+
 dns_view_t *
 dns_zone_getview(dns_zone_t *zone);
 /*%<

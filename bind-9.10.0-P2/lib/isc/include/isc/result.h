@@ -89,6 +89,10 @@
 #define ISC_R_BADBASE32			60	/*%< bad base32 encoding */
 #define ISC_R_UNSET			61	/*%< unset */
 
+#define SERVER_STATS  100
+#define VIEW_STATS  101
+#define ZONE_STATS  102
+
 /*% Not a result code: the number of results. */
 #define ISC_R_NRESULTS 			62
 

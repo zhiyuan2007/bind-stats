@@ -402,6 +402,8 @@ struct dns_zone {
 	 */
 	dns_ttl_t		maxttl;
 
+    isc_uint64_t        query_count;
+    float           qps;
 };
 
 typedef struct {
@@ -992,6 +994,8 @@ dns_zone_create(dns_zone_t **zonep, isc_mem_t *mctx) {
 	zone->sourceserial = 0;
 	zone->sourceserialset = ISC_FALSE;
 
+	zone->qps = 0.0;
+
 	zone->magic = ZONE_MAGIC;
 
 	/* Must be after magic is set. */
@@ -1019,6 +1023,35 @@ dns_zone_create(dns_zone_t **zonep, isc_mem_t *mctx) {
 	isc_mem_putanddetach(&zone->mctx, zone, sizeof(*zone));
 	return (result);
 }
+
+isc_uint64_t
+zone_get_query_count(dns_zone_t *zone)
+{
+    REQUIRE(DNS_ZONE_VALID(zone));
+    return zone->query_count;
+}
+
+float
+zone_get_qps(dns_zone_t *zone)
+{
+	REQUIRE(DNS_ZONE_VALID(zone));
+    return zone->qps;
+}
+
+void
+zone_set_query_count(dns_zone_t *zone, isc_uint64_t count)
+{
+	REQUIRE(DNS_ZONE_VALID(zone));
+    zone->query_count = count;
+}
+
+void
+zone_set_qps(dns_zone_t *zone, float qps)
+{
+	REQUIRE(DNS_ZONE_VALID(zone));
+    zone->qps = qps;
+}
+
 
 /*
  * Free a zone.  Because we require that there be no more

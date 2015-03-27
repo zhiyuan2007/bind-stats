@@ -52,6 +52,8 @@ isc_stats_create(isc_mem_t *mctx, isc_stats_t **statsp, int ncounters);
  *\li	anything else	-- failure
  */
 
+isc_uint64_t 
+isc_stats_get(isc_stats_t *stats, isc_statscounter_t counter);
 void
 isc_stats_attach(isc_stats_t *stats, isc_stats_t **statsp);
 /*%<

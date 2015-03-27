@@ -186,6 +186,7 @@ inc_stats(ns_client_t *client, isc_statscounter_t counter) {
 	dns_stats_t *querystats = NULL;
 
 	isc_stats_increment(ns_g_server->nsstats, counter);
+    isc_stats_increment(client->view->rcodestats, counter);
 
 	if (zone == NULL)
 		return;
@@ -8267,6 +8268,7 @@ ns_query_start(ns_client_t *client) {
 	INSIST(rdataset != NULL);
 	qtype = rdataset->type;
 	dns_rdatatypestats_increment(ns_g_server->rcvquerystats, qtype);
+	dns_rdatatypestats_increment(client->view->resquerystats, qtype);
 
 	if (dns_rdatatype_ismeta(qtype)) {
 		switch (qtype) {

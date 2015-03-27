@@ -67,16 +67,16 @@ struct ns_statschannel {
 	ISC_LINK(struct ns_statschannel)	link;
 };
 
-typedef struct
-stats_dumparg {
-	isc_statsformat_t	type;
-	void			*arg;		/* type dependent argument */
-	int			ncounters;	/* for general statistics */
-	int			*counterindices; /* for general statistics */
-	isc_uint64_t		*countervalues;	 /* for general statistics */
-	isc_result_t		result;
-} stats_dumparg_t;
-
+//typedef struct
+//stats_dumparg {
+//	isc_statsformat_t	type;
+//	void			*arg;		/* type dependent argument */
+//	int			ncounters;	/* for general statistics */
+//	int			*counterindices; /* for general statistics */
+//	isc_uint64_t		*countervalues;	 /* for general statistics */
+//	isc_result_t		result;
+//} stats_dumparg_t;
+//
 static isc_once_t once = ISC_ONCE_INIT;
 
 /*%
@@ -564,7 +564,7 @@ generalstat_dump(isc_statscounter_t counter, isc_uint64_t val, void *arg) {
 	dumparg->countervalues[counter] = val;
 }
 
-static isc_result_t
+isc_result_t
 dump_counters(isc_stats_t *stats, isc_statsformat_t type, void *arg,
 	      const char *category, const char **desc, int ncounters,
 	      int *indices, isc_uint64_t *values, int options)
@@ -686,7 +686,7 @@ dump_counters(isc_stats_t *stats, isc_statsformat_t type, void *arg,
 #endif
 }
 
-static void
+void
 rdtypestat_dump(dns_rdatastatstype_t type, isc_uint64_t val, void *arg) {
 	char typebuf[64];
 	const char *typestr;
@@ -712,6 +712,9 @@ rdtypestat_dump(dns_rdatastatstype_t type, isc_uint64_t val, void *arg) {
 	case isc_statsformat_file:
 		fp = dumparg->arg;
 		fprintf(fp, "%20" ISC_PRINT_QUADFORMAT "u %s\n", val, typestr);
+		break;
+    case isc_statsformat_string:
+		sprintf(dumparg->arg + strlen((char *)dumparg->arg), "%s %llu ", typestr, val);
 		break;
 	case isc_statsformat_xml:
 #ifdef HAVE_LIBXML2

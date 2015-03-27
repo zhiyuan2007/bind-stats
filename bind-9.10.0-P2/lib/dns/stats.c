@@ -88,6 +88,18 @@ typedef struct opcodedumparg {
 	void				*arg;
 } opcodedumparg_t;
 
+isc_uint64_t
+dns_stats_get_query_count(dns_stats_t *stats)
+{
+    return isc_stats_get(stats->counters, dns_opcode_query);
+}
+
+isc_uint64_t
+dns_stats_get(dns_stats_t *stats, dns_rdatatype_t counter)
+{
+    return isc_stats_get(stats->counters, counter);
+}
+
 void
 dns_stats_attach(dns_stats_t *stats, dns_stats_t **statsp) {
 	REQUIRE(DNS_STATS_VALID(stats));

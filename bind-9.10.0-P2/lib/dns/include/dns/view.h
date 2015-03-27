@@ -109,6 +109,7 @@ struct dns_view {
 	isc_event_t			resevent;
 	isc_event_t			adbevent;
 	isc_event_t			reqevent;
+	isc_stats_t *			rcodestats;
 	isc_stats_t *			adbstats;
 	isc_stats_t *			resstats;
 	dns_stats_t *			resquerystats;
@@ -208,6 +209,11 @@ struct dns_view {
 	void				(*cfg_destroy)(void **);
 
 	unsigned char			secret[32];	/* Client secret */
+
+	isc_uint64_t			last_count;
+	isc_uint64_t			query_count;
+    float                   qps;
+    float                   success_rate;
 };
 
 #define DNS_VIEW_MAGIC			ISC_MAGIC('V','i','e','w')
@@ -1009,6 +1015,13 @@ dns_view_getadbstats(dns_view_t *view, isc_stats_t **statsp);
  *
  *\li	'statsp' != NULL && '*statsp' != NULL
  */
+
+void
+dns_view_setrcodestats(dns_view_t *view, isc_stats_t *stats) ;
+
+void
+dns_view_getrcodestats(dns_view_t *view, isc_stats_t **statsp);
+
 
 void
 dns_view_setresstats(dns_view_t *view, isc_stats_t *stats);

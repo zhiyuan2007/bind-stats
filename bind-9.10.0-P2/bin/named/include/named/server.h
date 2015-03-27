@@ -32,6 +32,8 @@
 #include <dns/acl.h>
 #include <dns/types.h>
 
+#include <isc/thread.h>
+
 #include <named/types.h>
 
 #define NS_EVENTCLASS		ISC_EVENTCLASS(0x4E43)
@@ -117,6 +119,11 @@ struct ns_server {
 	isc_uint16_t		session_keybits;
 	isc_boolean_t		interface_auto;
 	unsigned char		secret[32];	/*%< Source Identity Token */
+
+    isc_boolean_t       qlog_extension;
+    isc_thread_t        qps_tid;
+    float               qps;
+    float               success_rate;
 };
 
 #define NS_SERVER_MAGIC			ISC_MAGIC('S','V','E','R')
@@ -205,6 +212,22 @@ ns_server_create(isc_mem_t *mctx, ns_server_t **serverp);
  * This function either succeeds or causes the program to exit
  * with a fatal error.
  */
+
+void *
+ns_server_qps_stats(void *args);
+
+isc_result_t
+ns_server_qps(ns_server_t *server, char *args, isc_buffer_t *text);
+
+isc_result_t
+ns_server_success_rate(ns_server_t *server, char *args, isc_buffer_t *text);
+
+isc_result_t 
+ns_server_rtype(ns_server_t *server, char *args, isc_buffer_t *text);
+    
+isc_result_t 
+ns_server_rcode(ns_server_t *server, char *args, isc_buffer_t *text);
+
 
 void
 ns_server_destroy(ns_server_t **serverp);

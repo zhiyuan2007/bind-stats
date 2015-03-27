@@ -2130,6 +2130,7 @@ client_request(isc_task_t *task, isc_event_t *event) {
 			      == 0 && view->matchrecursiveonly))
 			{
 				dns_view_attach(view, &client->view);
+                view->query_count++;
 				break;
 			}
 		}

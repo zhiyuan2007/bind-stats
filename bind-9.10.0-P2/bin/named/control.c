@@ -213,6 +213,14 @@ ns_control_docommand(isccc_sexpr_t *message, isc_buffer_t *text) {
 		result = ns_server_signing(ns_g_server, command, text);
 	} else if (command_compare(command, NS_COMMAND_ZONESTATUS)) {
 		result = ns_server_zonestatus(ns_g_server, command, text);
+    } else if (command_compare(command, NS_COMMAND_QPS)) {
+        result = ns_server_qps(ns_g_server, command, text);
+    } else if (command_compare(command, NS_COMMAND_SUCCESSRATE)) {
+        result = ns_server_success_rate(ns_g_server, command, text);
+    } else if (command_compare(command, NS_COMMAND_RTYPE)) {
+        result = ns_server_rtype(ns_g_server, command, text);
+    } else if (command_compare(command, NS_COMMAND_RCODE)) {
+        result = ns_server_rcode(ns_g_server, command, text);
 	} else {
 		isc_log_write(ns_g_lctx, NS_LOGCATEGORY_GENERAL,
 			      NS_LOGMODULE_CONTROL, ISC_LOG_WARNING,

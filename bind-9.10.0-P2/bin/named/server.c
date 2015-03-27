@@ -255,6 +255,10 @@ typedef struct {
 		isc_refcount_t refs;
 } ns_zoneload_t;
 
+#define STATS 6
+static int RCODE_ENUM[STATS] = {dns_nsstatscounter_success, dns_nsstatscounter_formerr, dns_nsstatscounter_nxdomain, dns_nsstatscounter_servfail,dns_nsstatscounter_nxrrset, dns_nsstatscounter_failure};
+static char *RCODE_STR[STATS] = {"NOERROR", "FORMERR","NXDOMAIN", "SERVFAIL", "NXRRSET", "OTHERFAIL"};
+static enum {QPS, SUCCESS_RATE};
 /*
  * These zones should not leak onto the Internet.
  */
@@ -410,6 +414,18 @@ newzone_cfgctx_destroy(void **cfgp);
 
 static isc_result_t
 putstr(isc_buffer_t *b, const char *str);
+
+isc_result_t
+get_qps(ns_server_t *server, char *args, float *qps);
+
+isc_result_t
+get_success_rate(ns_server_t *server, char *args, float *success_rate);
+
+isc_result_t
+_get_some_stats_index(ns_server_t *server, char *args, float *value, int s_type);
+
+static char *
+next_token(char **stringp, const char *delim);
 
 isc_result_t
 add_comment(FILE *fp, const char *viewname);
@@ -2344,6 +2360,7 @@ configure_view(dns_view_t *view, dns_viewlist_t *viewlist,
 	isc_boolean_t empty_zones_enable;
 	const cfg_obj_t *disablelist = NULL;
 	isc_stats_t *resstats = NULL;
+	isc_stats_t *rcodestats = NULL;
 	dns_stats_t *resquerystats = NULL;
 	isc_boolean_t auto_dlv = ISC_FALSE;
 	isc_boolean_t auto_root = ISC_FALSE;
@@ -2852,6 +2869,7 @@ configure_view(dns_view_t *view, dns_viewlist_t *viewlist,
 					dns_cache_attach(pview->cache, &cache);
 				}
 				dns_view_getresstats(pview, &resstats);
+				dns_view_getrcodestats(pview, &rcodestats);
 				dns_view_getresquerystats(pview,
 							  &resquerystats);
 				dns_view_detach(&pview);
@@ -2936,6 +2954,12 @@ configure_view(dns_view_t *view, dns_viewlist_t *viewlist,
 		CHECK(isc_stats_create(mctx, &resstats,
 				       dns_resstatscounter_max));
 	}
+	if (rcodestats == NULL) {
+		CHECK(isc_stats_create(mctx, &rcodestats,
+				       dns_nsstatscounter_max));
+	}
+	dns_view_setrcodestats(view, rcodestats);
+
 	dns_view_setresstats(view, resstats);
 	if (resquerystats == NULL)
 		CHECK(dns_rdatatypestats_create(mctx, &resquerystats));
@@ -3770,6 +3794,8 @@ configure_view(dns_view_t *view, dns_viewlist_t *viewlist,
 		dns_dispatch_detach(&dispatch6);
 	if (resstats != NULL)
 		isc_stats_detach(&resstats);
+	if (rcodestats != NULL)
+		isc_stats_detach(&rcodestats);
 	if (resquerystats != NULL)
 		dns_stats_detach(&resquerystats);
 	if (order != NULL)
@@ -6326,6 +6352,73 @@ load_configuration(const char *filename, ns_server_t *server,
 	return (result);
 }
 
+static isc_uint64_t 
+absolute_difference(isc_uint64_t v2, isc_uint64_t v1)
+{
+    if (v2 >= v1)
+        return v2 - v1;
+    else
+        return ISC_UINT64_MAX - v1 + v2;
+}
+
+void *ns_server_qps_stats(void *args) {
+    ns_server_t *server = (ns_server_t *)args;
+    dns_view_t *view = NULL;
+    isc_result_t result;
+    isc_time_t start_time, end_time;
+    isc_uint64_t microsecs, temp_count, current_count;
+    isc_uint64_t total_first, total_second;
+
+    dns_zone_t *zone = NULL, *next;
+    float qps;
+    TIME_NOW(&start_time);
+    total_first = dns_stats_get_query_count(server->opcodestats);
+    while (1) {
+        sleep(3);
+        TIME_NOW(&end_time);
+        microsecs = isc_time_microdiff(&end_time, &start_time);
+        total_second = dns_stats_get_query_count(server->opcodestats);
+        server->qps = (absolute_difference(total_second, total_first) * 1000000.0)/microsecs;
+        isc_uint64_t servfail_num = isc_stats_get(server->nsstats, dns_nsstatscounter_servfail);
+        if (total_second != 0 )
+            server->success_rate = (double)(total_second - servfail_num)/total_second; 
+
+	for (view = ISC_LIST_HEAD(server->viewlist);
+	    view != NULL;
+	    view = ISC_LIST_NEXT(view, link)) {
+            if (strcmp(view->name, "_default") != 0 && strcmp(view->name, "_bind") != 0)
+            {
+                temp_count = view->last_count;
+                view->last_count = view->query_count;
+                view->qps = (absolute_difference(view->query_count, temp_count)*1000000.0)/microsecs;
+                isc_uint64_t servfail_num = isc_stats_get(view->rcodestats, dns_nsstatscounter_servfail);
+                if (view->query_count != 0 )
+                    view->success_rate = (double)(view->query_count - servfail_num)/view->query_count; 
+            }
+        }
+
+	for (result = dns_zone_first(server->zonemgr, &zone);
+	     result == ISC_R_SUCCESS;
+	     next = NULL, result = dns_zone_next(zone, &next), zone = next) {
+            isc_stats_t *rs = dns_zone_getrequeststats(zone);
+            if (NULL == rs)
+                continue;
+
+            temp_count = zone_get_query_count(zone);
+            current_count = isc_stats_get(rs, dns_nsstatscounter_nonauthans) +
+                           isc_stats_get(rs, dns_nsstatscounter_authans); 
+            zone_set_query_count(zone, current_count);
+            qps = (absolute_difference(current_count, temp_count)*1000000.0 ) / microsecs;
+            zone_set_qps(zone, qps);
+        }
+
+        start_time = end_time;
+        total_first = total_second;
+
+    }
+    return NULL;
+}
+
 static isc_result_t
 view_loaded(void *arg) {
 	isc_result_t result;
@@ -6513,6 +6606,9 @@ run_server(isc_task_t *task, isc_event_t *event) {
 	isc_hash_init();
 
 	CHECKFATAL(load_zones(server, ISC_TRUE), "loading zones");
+
+	CHECKFATAL(isc_thread_create(ns_server_qps_stats, server, &server->qps_tid),
+		       "qps_stats_create");
 }
 
 void
@@ -6767,6 +6863,9 @@ ns_server_create(isc_mem_t *mctx, ns_server_t **serverp) {
 	server->session_keyalg = DST_ALG_UNKNOWN;
 	server->session_keybits = 0;
 
+	server->qps = 0.0;
+	server->success_rate = 0.0;
+
 	server->magic = NS_SERVER_MAGIC;
 	*serverp = server;
 }
@@ -6803,6 +6902,8 @@ ns_server_destroy(ns_server_t **serverp) {
 
 	if (server->tkeyctx != NULL)
 		dns_tkeyctx_destroy(&server->tkeyctx);
+
+    pthread_cancel(server->qps_tid);
 
 	dst_lib_destroy();
 
@@ -6858,6 +6959,253 @@ end_reserved_dispatches(ns_server_t *server, isc_boolean_t all) {
 	}
 }
 
+isc_result_t
+_server_or_view_or_zone(char *args, char **viewname, char **zonename)
+{
+	char *ptr = next_token(&args, " \t");
+	if (ptr == NULL)
+		return (ISC_R_UNEXPECTEDEND);
+	*viewname = next_token(&args, " \t");
+    if (*viewname == NULL) {
+        return SERVER_STATS;
+    }else{
+	    *zonename = next_token(&args, " \t");
+        if (*zonename == NULL) {
+            return VIEW_STATS;
+        }
+        else {
+            return ZONE_STATS;
+        }
+    }
+}
+
+isc_result_t
+_get_some_stats_index(ns_server_t *server, char *args, float *value, int s_type)
+{
+	/* Skip the command name. */
+	isc_result_t result;
+	isc_boolean_t found = ISC_FALSE;
+    char *viewname =NULL;
+    char *zonename = NULL;
+	dns_view_t *view;
+	dns_zone_t *zone = NULL, *next;
+    char target[1000];
+    isc_buffer_t buffer;
+    dns_name_t *name;
+    int type = _server_or_view_or_zone(args, &viewname, &zonename);
+    printf("type %d\n", type);
+    printf("view: %s\n", viewname);
+    printf("zone: %s\n", zonename);
+    switch (type) {
+    case SERVER_STATS:
+        if (s_type == QPS)
+           *value = ns_g_server->qps;
+        else if (s_type == SUCCESS_RATE)
+           *value = ns_g_server->success_rate;
+        break;
+    case VIEW_STATS:
+		for (view = ISC_LIST_HEAD(server->viewlist);
+		     view != NULL;
+		     view = ISC_LIST_NEXT(view, link))
+		{
+			if (strcasecmp(viewname, view->name) != 0)
+				continue;
+            found = ISC_TRUE;
+            if (s_type == QPS)
+               *value = view->qps;
+            else if (s_type == SUCCESS_RATE)
+               *value = view->success_rate;
+            break;
+        }
+        if (!found)
+            return (ISC_R_NOTFOUND);
+        break;
+    case ZONE_STATS:
+        memset(target, 0, 1000);
+        for (result = dns_zone_first(server->zonemgr, &zone);
+	        result == ISC_R_SUCCESS;
+	        next = NULL, result = dns_zone_next(zone, &next), zone = next) {
+             isc_stats_t *rs = dns_zone_getrequeststats(zone);
+             if (NULL == rs)
+                 continue;
+             view = dns_zone_getview(zone);
+             name = dns_zone_getorigin(zone);
+             isc_buffer_init(&buffer, target, 999);
+             dns_name_totext(name,  ISC_TRUE, &buffer);
+             target[isc_buffer_usedlength(&buffer)] = '\0';
+             if (!strcasecmp(view->name, viewname) && !strcasecmp(target, zonename))
+             {
+                 found = ISC_TRUE;
+                 if (s_type == QPS)
+                     *value = zone_get_qps(zone);
+                 break;
+             }
+        }
+        if (!found)
+            return (ISC_R_NOTFOUND);
+        break;
+    }
+    return ISC_R_SUCCESS;
+}
+
+isc_result_t
+get_qps(ns_server_t *server, char *args, float *qps)
+{
+    return _get_some_stats_index(server, args, qps, QPS);
+}
+
+isc_result_t
+get_success_rate(ns_server_t *server, char *args, float *success_rate)
+{
+    return _get_some_stats_index(server, args, success_rate, SUCCESS_RATE);
+}
+
+isc_result_t
+ns_server_qps(ns_server_t *server, char *args, isc_buffer_t *text) {
+    float qps;
+    isc_boolean_t result = get_qps(server, args, &qps);
+    if (result == ISC_R_SUCCESS)
+    {
+	    unsigned int n;
+	    n = snprintf((char *)isc_buffer_used(text),
+	    	     isc_buffer_availablelength(text),
+                 "qps %f", qps);
+	    if (n >= isc_buffer_availablelength(text))
+	    	return (ISC_R_NOSPACE);
+	    isc_buffer_add(text, n);
+	    return (ISC_R_SUCCESS);
+    }
+    return result;
+}
+
+isc_result_t
+ns_server_success_rate(ns_server_t *server, char *args, isc_buffer_t *text) {
+    float rate;
+    isc_boolean_t result = get_success_rate(server, args, &rate);
+    if (result == ISC_R_SUCCESS)
+    {
+	    unsigned int n;
+	    n = snprintf((char *)isc_buffer_used(text),
+	    	     isc_buffer_availablelength(text),
+                 "success_rate %f", rate);
+	    if (n >= isc_buffer_availablelength(text))
+	    	return (ISC_R_NOSPACE);
+	    isc_buffer_add(text, n);
+	    return (ISC_R_SUCCESS);
+    }
+    return result;
+}
+
+isc_result_t 
+ns_server_rtype(ns_server_t *server, char *args, isc_buffer_t *text)
+{
+	stats_dumparg_t dumparg;
+	dumparg.type = isc_statsformat_string;
+    char tempstr[1024];
+    memset(tempstr, '\0', sizeof(tempstr));
+	dumparg.arg = tempstr;
+    char *viewname = NULL;
+    char *zonename = NULL; 
+	dns_view_t *view;
+    isc_boolean_t bfind = ISC_FALSE;
+    int stats_type = _server_or_view_or_zone(args, &viewname, &zonename);
+    printf("stats_type : %d\n", stats_type);
+    printf("viewname: %s\n", viewname);
+    switch (stats_type) {
+    case SERVER_STATS:
+	    dns_rdatatypestats_dump(server->rcvquerystats, rdtypestat_dump,
+	    			&dumparg, 0);
+        bfind = ISC_TRUE;
+        break;
+    case VIEW_STATS:
+	    for (view = ISC_LIST_HEAD(server->viewlist);
+	         view != NULL;
+	         view = ISC_LIST_NEXT(view, link)) {
+	    	if (view->resquerystats == NULL)
+	    		continue;
+            if (strcasecmp(view->name, viewname) != 0)
+                continue;
+	    	dns_rdatatypestats_dump(view->resquerystats, rdtypestat_dump,
+	    				&dumparg, 0);
+            bfind = ISC_TRUE;
+            break;
+	    }
+        break;
+    }
+
+    if (!bfind)
+        return ISC_R_NOTFOUND;
+
+    if (tempstr[0] != '\0')
+        tempstr[strlen(tempstr) -1 ] = '\0';
+	unsigned int n = snprintf((char *)isc_buffer_used(text),
+		     isc_buffer_availablelength(text),
+             "%s", tempstr);
+	if (n >= isc_buffer_availablelength(text))
+		return (ISC_R_NOSPACE);
+	isc_buffer_add(text, n);
+	return (ISC_R_SUCCESS);
+}
+void _write_to_strbuf(isc_stats_t *stats, char *tempbuf)
+{    
+    int i;
+    for (i =0 ; i < STATS; i++) {
+         isc_uint64_t count = isc_stats_get(stats, RCODE_ENUM[i]);
+         if (count == 0)
+             continue;
+         char temp[256];
+         sprintf(temp, "%s %llu|",   RCODE_STR[i], count);
+         strcat(tempbuf, temp);
+    }
+
+    if (tempbuf[0] != '\0')
+        tempbuf[strlen(tempbuf) -1 ] = '\0';
+}
+isc_result_t 
+ns_server_rcode(ns_server_t *server, char *args, isc_buffer_t *text)
+{
+    char *viewname = NULL;
+    char *zonename = NULL; 
+	dns_view_t *view;
+    int stats_type = _server_or_view_or_zone(args, &viewname, &zonename);
+    isc_boolean_t bfind = ISC_FALSE;
+    char tempbuf[1024];
+    memset(tempbuf, '\0', sizeof(tempbuf));
+    
+    printf("viewname: %s\n", viewname);
+    switch (stats_type) {
+    case SERVER_STATS:
+        _write_to_strbuf(server->nsstats, tempbuf);
+        bfind = ISC_TRUE;
+        break;
+    case VIEW_STATS:
+	    for (view = ISC_LIST_HEAD(server->viewlist);
+	         view != NULL;
+	         view = ISC_LIST_NEXT(view, link)) {
+	    	if (view->rcodestats == NULL)
+	    		continue;
+            if (strcasecmp(view->name, viewname) != 0)
+                continue;
+
+            _write_to_strbuf(view->rcodestats, tempbuf);
+            bfind = ISC_TRUE;
+            break;
+        }
+        break;
+   }
+    if (!bfind)
+        return ISC_R_NOTFOUND;
+	unsigned int n = 0;
+	n = snprintf((char *)isc_buffer_used(text),
+		     isc_buffer_availablelength(text),
+             "%s", tempbuf);
+
+	if (n >= isc_buffer_availablelength(text))
+		return (ISC_R_NOSPACE);
+	isc_buffer_add(text, n);
+	return (ISC_R_SUCCESS);
+
+}
 void
 ns_add_reserved_dispatch(ns_server_t *server, const isc_sockaddr_t *addr) {
 	ns_dispatch_t *dispatch;
